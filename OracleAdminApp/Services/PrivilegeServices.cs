@@ -1,5 +1,6 @@
 ﻿using System.Data;
 using Oracle.ManagedDataAccess.Client;
+using System.Text.RegularExpressions;
 
 namespace OracleAdminApp.Services
 {
@@ -101,6 +102,85 @@ namespace OracleAdminApp.Services
                     { Value = grantee.ToUpperInvariant() }
             };
             return Run(db, sql, parms);
+        }
+
+
+
+
+        // ====== PHÂN QUYỀN ======
+        private static readonly Regex IdentifierValidator = new("^[A-Za-z][A-Za-z0-9_$#]*$");
+
+        private static void ValidateIdentifier(string identifier, string parameterName)
+        {
+            if (string.IsNullOrWhiteSpace(identifier))
+                throw new ArgumentException("Giá trị không được rỗng.", parameterName);
+
+            if (!IdentifierValidator.IsMatch(identifier))
+                throw new ArgumentException(
+                    "Tên phải bắt đầu bằng chữ cái và chỉ chứa chữ cái, số, _, $ hoặc #.",
+                    parameterName);
+        }
+
+        private static void ExecuteNonQuery(OracleDbConnection db, string sql)
+        {
+            if (db == null)
+                throw new Exception("Chưa kết nối đến cơ sở dữ liệu Oracle.");
+
+            using var conn = db.GetConnection();
+            conn.Open();
+            using var cmd = new OracleCommand(sql, conn);
+            cmd.ExecuteNonQuery();
+        }
+
+        public static void GrantPrivilege(OracleDbConnection db, string grantee, string privilege, string objectName = null, bool grantOption = false)
+        {
+            ValidateIdentifier(grantee, nameof(grantee));
+
+            if (string.IsNullOrWhiteSpace(privilege))
+                throw new ArgumentException("Privilege không được rỗng.", nameof(privilege));
+
+            string sql;
+
+            if (!string.IsNullOrWhiteSpace(objectName))
+            {
+                ValidateIdentifier(objectName, nameof(objectName));
+                sql = $"GRANT {privilege.ToUpperInvariant()} ON {objectName.ToUpperInvariant()} TO {grantee.ToUpperInvariant()}";
+
+                if (grantOption)
+                    sql += " WITH GRANT OPTION";
+            }
+            else
+            {
+                sql = $"GRANT {privilege.ToUpperInvariant()} TO {grantee.ToUpperInvariant()}";
+            }
+
+            ExecuteNonQuery(db, sql);
+        }
+
+
+
+        // ====== THU HỒI QUYỀN ======
+        public static void RevokePrivilege(OracleDbConnection db, string grantee, string privilege, string objectName = null)
+        {
+            ValidateIdentifier(grantee, nameof(grantee));
+
+            if (string.IsNullOrWhiteSpace(privilege))
+                throw new ArgumentException("Privilege không được rỗng.", nameof(privilege));
+
+            string sql;
+
+            if (!string.IsNullOrWhiteSpace(objectName))
+            {
+                ValidateIdentifier(objectName, nameof(objectName));
+
+                sql = $"REVOKE {privilege.ToUpperInvariant()} ON {objectName.ToUpperInvariant()} FROM {grantee.ToUpperInvariant()}";
+            }
+            else
+            {
+                sql = $"REVOKE {privilege.ToUpperInvariant()} FROM {grantee.ToUpperInvariant()}";
+            }
+
+            ExecuteNonQuery(db, sql);
         }
     }
 }
